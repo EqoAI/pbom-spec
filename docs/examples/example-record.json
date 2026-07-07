@@ -1,0 +1,67 @@
+{
+  "@context": "https://pbom.org/context/v1",
+  "@id": "urn:uuid:86fde74f-37d4-4fc1-97f6-38d1153ed895",
+  "@type": "PBOMRecord",
+  "action_primitives": [],
+  "commitment": {
+    "commitment_hash": "ab47fdef19544950f745e5a367e495b2d652ac3557e304c6e6faf98141c64056",
+    "commitment_ts": 1780162438467,
+    "commitment_type": "pre_inference",
+    "commitment_verified": true,
+    "nonce": "a44bb9801c7cbe093b3cfce550368438",
+    "nonce_revealed_ts": 1780162438469
+  },
+  "context_management": null,
+  "extensions": {},
+  "identity": {
+    "chain_sequence_number": 1,
+    "created_at_epoch_ms": 1780162438469,
+    "created_at_iso": "2026-05-30T17:33:58.469Z",
+    "entry_id": "86fde74f-37d4-4fc1-97f6-38d1153ed895",
+    "entry_signature": null,
+    "pbom_version": "1.0.0",
+    "previous_entry_hash": null
+  },
+  "inference": {
+    "context_utilization_pct": null,
+    "context_window_max": null,
+    "max_tokens": null,
+    "model_family": null,
+    "model_id": "openai/gpt-4o",
+    "model_provider": null,
+    "streaming": null,
+    "temperature": null
+  },
+  "principal": {
+    "application_id": "example-agent",
+    "sdk_name": "pbom-python",
+    "sdk_version": "0.1.0"
+  },
+  "prompt": {
+    "raw_content": {
+      "full_prompt_hash": "e06b284d7baa6cc8448731a8bd3dde7a0e55b8a9d15f17b2179edd85570770bf",
+      "system_prompt_hash": "42ea835592c20e1e24b29875c1063f6c7ef31f78c490c428306b4e1088fcf0e8",
+      "system_prompt_text": null,
+      "system_prompt_token_count": 4,
+      "total_input_token_count": 8,
+      "user_prompt_hash": "3366bae1c4e1cf2198c510ec4d7a0e68f3adf97685f5149ce1035e50119ec05e",
+      "user_prompt_text": null
+    },
+    "structural_fingerprint": null,
+    "template": null
+  },
+  "provider_metadata": null,
+  "response": {
+    "response_hash": "29701a8d729290a223107fac54c2b0ad278d17183df8035cfb2e96ccf032550c",
+    "response_text": null,
+    "response_token_count": 7,
+    "stop_reason": null,
+    "thinking_token_count": null
+  },
+  "storage_mode": "fingerprint",
+  "structural_analysis": null,
+  "telemetry": {
+    "inference_latency_ms": null,
+    "total_latency_ms": 2
+  }
+}

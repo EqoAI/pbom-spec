@@ -1,0 +1,903 @@
+{
+  "$defs": {
+    "ActionPrimitive": {
+      "description": "Canonical set of action primitives detectable in LLM responses.\n\nEach value represents a fundamental operation that structural analysis\ncan identify in a response -- for example, a generated code snippet that\nreads a file, makes a network call, or accesses a secret.\n\nThis set is fixed within a given PBOM format version. New primitives\nrequire a format version bump and are added in a backward-compatible way\n(new values appended, existing values never renamed or removed).",
+      "enum": [
+        "DATA_READ",
+        "DATA_WRITE",
+        "DATA_DELETE",
+        "DATA_EXFILTRATION",
+        "NETWORK_OUTBOUND",
+        "NETWORK_INBOUND",
+        "FILE_SYSTEM_READ",
+        "FILE_SYSTEM_WRITE",
+        "FILE_SYSTEM_DELETE",
+        "AUTH_ESCALATION",
+        "AUTH_DELEGATION",
+        "TOOL_INVOCATION",
+        "STATE_MUTATION",
+        "PII_ACCESS",
+        "PII_EXPOSURE",
+        "SECRET_ACCESS",
+        "FINANCIAL_TXN",
+        "CONFIG_CHANGE",
+        "HUMAN_COMMUNICATION"
+      ],
+      "title": "ActionPrimitive",
+      "type": "string"
+    },
+    "ActionPrimitiveDetection": {
+      "description": "Detected action primitive with analysis metadata and confidence.",
+      "properties": {
+        "category": {
+          "description": "Category grouping for the detected primitive. One of seven canonical groups: data operations, network, file system, authentication, execution, sensitive data, external.",
+          "enum": [
+            "DATA_OPERATIONS",
+            "NETWORK",
+            "FILE_SYSTEM",
+            "AUTHENTICATION",
+            "EXECUTION",
+            "SENSITIVE_DATA",
+            "EXTERNAL"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "confidence": {
+          "description": "Confidence score in the detection result (0.0 to 1.0).",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence": {
+          "description": "Short evidence excerpt or rationale supporting the detection.",
+          "title": "Evidence",
+          "type": "string"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional location hint (line span, node path, or section).",
+          "title": "Location"
+        },
+        "primitive": {
+          "$ref": "#/$defs/ActionPrimitive",
+          "description": "Detected canonical action primitive."
+        },
+        "risk_level": {
+          "description": "Risk label for the detection: \"low\", \"medium\", \"high\", or \"critical\".",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "title": "Risk Level",
+          "type": "string"
+        }
+      },
+      "required": [
+        "primitive",
+        "confidence",
+        "evidence",
+        "risk_level",
+        "category"
+      ],
+      "title": "ActionPrimitiveDetection",
+      "type": "object"
+    },
+    "ContextManagement": {
+      "description": "Conversation context usage metadata for the request.",
+      "properties": {
+        "conversation_turn_count": {
+          "description": "Conversation turn count at emission.",
+          "title": "Conversation Turn Count",
+          "type": "integer"
+        },
+        "history_message_count": {
+          "description": "Message count contributed by history.",
+          "title": "History Message Count",
+          "type": "integer"
+        },
+        "history_token_count": {
+          "description": "Token count contributed by history.",
+          "title": "History Token Count",
+          "type": "integer"
+        },
+        "prompt_cache_hit": {
+          "description": "Whether provider-side prompt cache was used.",
+          "title": "Prompt Cache Hit",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "conversation_turn_count",
+        "history_token_count",
+        "history_message_count",
+        "prompt_cache_hit"
+      ],
+      "title": "ContextManagement",
+      "type": "object"
+    },
+    "CryptographicCommitment": {
+      "description": "Commitment metadata proving prompt anchoring semantics.",
+      "properties": {
+        "commitment_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 over canonical prompt text concatenated with nonce.",
+          "title": "Commitment Hash"
+        },
+        "commitment_ts": {
+          "description": "Commitment creation timestamp in epoch ms.",
+          "title": "Commitment Ts",
+          "type": "integer"
+        },
+        "commitment_type": {
+          "description": "Commitment mode, e.g. \"pre_inference\" or \"post_hoc\".",
+          "enum": [
+            "pre_inference",
+            "post_hoc"
+          ],
+          "title": "Commitment Type",
+          "type": "string"
+        },
+        "commitment_verified": {
+          "default": false,
+          "description": "Whether recomputation matches the stored commitment hash.",
+          "title": "Commitment Verified",
+          "type": "boolean"
+        },
+        "nonce": {
+          "description": "Random nonce used in commitment hash computation.",
+          "title": "Nonce",
+          "type": "string"
+        },
+        "nonce_revealed_ts": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Nonce reveal timestamp in epoch ms.",
+          "title": "Nonce Revealed Ts"
+        }
+      },
+      "required": [
+        "commitment_type",
+        "nonce",
+        "commitment_ts"
+      ],
+      "title": "CryptographicCommitment",
+      "type": "object"
+    },
+    "EntryIdentity": {
+      "description": "Chain identity and creation metadata for a PBOM record.",
+      "properties": {
+        "chain_sequence_number": {
+          "description": "Monotonic sequence number within the chain directory.",
+          "title": "Chain Sequence Number",
+          "type": "integer"
+        },
+        "created_at_epoch_ms": {
+          "description": "Record creation timestamp as epoch ms.",
+          "title": "Created At Epoch Ms",
+          "type": "integer"
+        },
+        "created_at_iso": {
+          "description": "Record creation timestamp in ISO-8601 UTC.",
+          "title": "Created At Iso",
+          "type": "string"
+        },
+        "entry_id": {
+          "description": "Unique record identifier.",
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "entry_signature": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional future cryptographic signature for this entry.",
+          "title": "Entry Signature"
+        },
+        "pbom_version": {
+          "default": "1.0.0",
+          "description": "PBOM schema version for this record.",
+          "title": "Pbom Version",
+          "type": "string"
+        },
+        "previous_entry_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 hash of the previous canonical record; null for first record.",
+          "title": "Previous Entry Hash"
+        }
+      },
+      "required": [
+        "entry_id",
+        "chain_sequence_number",
+        "created_at_iso",
+        "created_at_epoch_ms"
+      ],
+      "title": "EntryIdentity",
+      "type": "object"
+    },
+    "InferenceMetadata": {
+      "description": "Model and runtime configuration used for inference.",
+      "properties": {
+        "context_utilization_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Fraction of context window utilized by request input.",
+          "title": "Context Utilization Pct"
+        },
+        "context_window_max": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum context window for the model.",
+          "title": "Context Window Max"
+        },
+        "max_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum output token target requested.",
+          "title": "Max Tokens"
+        },
+        "model_family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Model family identifier.",
+          "title": "Model Family"
+        },
+        "model_id": {
+          "description": "Full model identifier, e.g. openai/gpt-4o.",
+          "title": "Model Id",
+          "type": "string"
+        },
+        "model_provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Model provider identifier.",
+          "title": "Model Provider"
+        },
+        "streaming": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether response streaming was enabled.",
+          "title": "Streaming"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sampling temperature used for generation.",
+          "title": "Temperature"
+        }
+      },
+      "required": [
+        "model_id"
+      ],
+      "title": "InferenceMetadata",
+      "type": "object"
+    },
+    "Principal": {
+      "description": "Producer identity metadata for the application and SDK.",
+      "properties": {
+        "application_id": {
+          "description": "Application identifier emitting PBOM records.",
+          "title": "Application Id",
+          "type": "string"
+        },
+        "sdk_name": {
+          "description": "SDK name, such as pbom-python.",
+          "title": "Sdk Name",
+          "type": "string"
+        },
+        "sdk_version": {
+          "description": "SDK version string.",
+          "title": "Sdk Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "application_id",
+        "sdk_name",
+        "sdk_version"
+      ],
+      "title": "Principal",
+      "type": "object"
+    },
+    "PromptRecord": {
+      "description": "Prompt section grouping raw content, template data, and structural intent.",
+      "properties": {
+        "raw_content": {
+          "$ref": "#/$defs/RawContent",
+          "description": "Prompt content details."
+        },
+        "structural_fingerprint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StructuralFingerprint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional prompt intent classification metadata."
+        },
+        "template": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PromptTemplate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional prompt template metadata."
+        }
+      },
+      "required": [
+        "raw_content"
+      ],
+      "title": "PromptRecord",
+      "type": "object"
+    },
+    "PromptTemplate": {
+      "description": "Template metadata when a templating system produced prompt content.",
+      "properties": {
+        "prompt_construction_method": {
+          "description": "Description of how template inputs were combined.",
+          "title": "Prompt Construction Method",
+          "type": "string"
+        },
+        "template_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 hash of canonical template definition.",
+          "title": "Template Hash"
+        },
+        "template_id": {
+          "description": "Template identifier from upstream system.",
+          "title": "Template Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "template_id",
+        "prompt_construction_method"
+      ],
+      "title": "PromptTemplate",
+      "type": "object"
+    },
+    "ProviderMetadata": {
+      "description": "Provider-specific request metadata useful for traceability.",
+      "properties": {
+        "api_version": {
+          "description": "Provider API version used.",
+          "title": "Api Version",
+          "type": "string"
+        },
+        "provider_name": {
+          "description": "Inference provider name.",
+          "title": "Provider Name",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Provider request identifier.",
+          "title": "Request Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider_name",
+        "api_version",
+        "request_id"
+      ],
+      "title": "ProviderMetadata",
+      "type": "object"
+    },
+    "RawContent": {
+      "description": "Prompt content fingerprints and optional forensic prompt text.",
+      "properties": {
+        "full_prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 hash of canonical combined prompt content.",
+          "title": "Full Prompt Hash"
+        },
+        "system_prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 hash of system prompt text.",
+          "title": "System Prompt Hash"
+        },
+        "system_prompt_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional raw system prompt text in forensic mode.",
+          "title": "System Prompt Text"
+        },
+        "system_prompt_token_count": {
+          "description": "Token count estimate for the system prompt.",
+          "title": "System Prompt Token Count",
+          "type": "integer"
+        },
+        "total_input_token_count": {
+          "description": "Token count estimate for full input prompt content.",
+          "title": "Total Input Token Count",
+          "type": "integer"
+        },
+        "user_prompt_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 hash of user prompt text.",
+          "title": "User Prompt Hash"
+        },
+        "user_prompt_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional raw user prompt text in forensic mode.",
+          "title": "User Prompt Text"
+        }
+      },
+      "required": [
+        "system_prompt_token_count",
+        "total_input_token_count"
+      ],
+      "title": "RawContent",
+      "type": "object"
+    },
+    "ResponseRecord": {
+      "description": "Response section with output fingerprints and optional forensic text.",
+      "properties": {
+        "response_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 hash of model response text.",
+          "title": "Response Hash"
+        },
+        "response_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional raw model response text in forensic mode.",
+          "title": "Response Text"
+        },
+        "response_token_count": {
+          "description": "Token count estimate for response text.",
+          "title": "Response Token Count",
+          "type": "integer"
+        },
+        "stop_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Provider stop reason for generation completion.",
+          "title": "Stop Reason"
+        },
+        "thinking_token_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reasoning/thinking token count when available.",
+          "title": "Thinking Token Count"
+        }
+      },
+      "required": [
+        "response_token_count"
+      ],
+      "title": "ResponseRecord",
+      "type": "object"
+    },
+    "StructuralAnalysis": {
+      "description": "Structural response analysis output for language/code-aware auditing.",
+      "properties": {
+        "env_access": {
+          "description": "Detected environment variable access operations.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Env Access",
+          "type": "array"
+        },
+        "file_operations": {
+          "description": "Detected file operation primitives.",
+          "items": {
+            "type": "string"
+          },
+          "title": "File Operations",
+          "type": "array"
+        },
+        "function_calls": {
+          "description": "Detected function calls.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Function Calls",
+          "type": "array"
+        },
+        "imports": {
+          "description": "Imported modules or packages.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Imports",
+          "type": "array"
+        },
+        "language": {
+          "description": "Primary language detected in output.",
+          "title": "Language",
+          "type": "string"
+        },
+        "network_calls": {
+          "description": "Detected network call primitives.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Network Calls",
+          "type": "array"
+        },
+        "output_type": {
+          "description": "Output form, e.g. \"text\" or \"code\".",
+          "title": "Output Type",
+          "type": "string"
+        },
+        "parse_errors": {
+          "description": "Parser or analyzer errors encountered during structural analysis.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Parse Errors",
+          "type": "array"
+        },
+        "raw_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 hash over canonical structural analysis input.",
+          "title": "Raw Hash"
+        },
+        "system_commands": {
+          "description": "Detected shell/system command primitives.",
+          "items": {
+            "type": "string"
+          },
+          "title": "System Commands",
+          "type": "array"
+        }
+      },
+      "required": [
+        "output_type",
+        "language"
+      ],
+      "title": "StructuralAnalysis",
+      "type": "object"
+    },
+    "StructuralFingerprint": {
+      "description": "High-level classification describing prompt intent.",
+      "properties": {
+        "prompt_intent_classification": {
+          "description": "Classifier label for prompt intent.",
+          "title": "Prompt Intent Classification",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt_intent_classification"
+      ],
+      "title": "StructuralFingerprint",
+      "type": "object"
+    },
+    "Telemetry": {
+      "description": "Latency telemetry associated with record emission and inference.",
+      "properties": {
+        "inference_latency_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Model inference latency in ms.",
+          "title": "Inference Latency Ms"
+        },
+        "total_latency_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "End-to-end operation latency in ms.",
+          "title": "Total Latency Ms"
+        }
+      },
+      "title": "Telemetry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level tamper-evident PBOM record for one LLM interaction.\n\nThe ``extensions`` field is for non-standard or implementation-specific\ncontent. Any tool that produces PBOM records may write additional data\nthere under a namespaced key (e.g., ``mytool.gate_verdict``). The OSS\nreference implementation preserves this dict through round-trips but\ndoes not validate its shape and does not emit content into it.",
+  "properties": {
+    "@context": {
+      "default": "https://pbom.org/context/v1",
+      "description": "JSON-LD context URL for PBOM records.",
+      "title": "@Context",
+      "type": "string"
+    },
+    "@id": {
+      "description": "JSON-LD identifier for this record.",
+      "title": "@Id",
+      "type": "string"
+    },
+    "@type": {
+      "default": "PBOMRecord",
+      "description": "JSON-LD type identifier.",
+      "title": "@Type",
+      "type": "string"
+    },
+    "action_primitives": {
+      "description": "Detected primitives with confidence, evidence, and risk metadata.",
+      "items": {
+        "$ref": "#/$defs/ActionPrimitiveDetection"
+      },
+      "title": "Action Primitives",
+      "type": "array"
+    },
+    "commitment": {
+      "$ref": "#/$defs/CryptographicCommitment",
+      "description": "Cryptographic commitment metadata."
+    },
+    "context_management": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ContextManagement"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional conversation context accounting metadata."
+    },
+    "extensions": {
+      "additionalProperties": true,
+      "description": "Implementation-specific metadata that is outside the PBOM core schema. Use namespaced keys to avoid collisions (for example 'toolname.signal_name'). The OSS reference implementation preserves this object on read/write but does not emit proprietary content into it.",
+      "title": "Extensions",
+      "type": "object"
+    },
+    "identity": {
+      "$ref": "#/$defs/EntryIdentity",
+      "description": "Record identity and chain metadata."
+    },
+    "inference": {
+      "$ref": "#/$defs/InferenceMetadata",
+      "description": "Model inference configuration metadata."
+    },
+    "principal": {
+      "$ref": "#/$defs/Principal",
+      "description": "Application and SDK producer metadata."
+    },
+    "prompt": {
+      "$ref": "#/$defs/PromptRecord",
+      "description": "Prompt metadata and fingerprints."
+    },
+    "provider_metadata": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProviderMetadata"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional provider-specific request metadata."
+    },
+    "response": {
+      "$ref": "#/$defs/ResponseRecord",
+      "description": "Response metadata and fingerprints."
+    },
+    "storage_mode": {
+      "default": "fingerprint",
+      "description": "Storage mode controlling whether raw content is persisted.",
+      "enum": [
+        "fingerprint",
+        "forensic"
+      ],
+      "title": "Storage Mode",
+      "type": "string"
+    },
+    "structural_analysis": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StructuralAnalysis"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional structural analysis summary for the model output."
+    },
+    "telemetry": {
+      "$ref": "#/$defs/Telemetry",
+      "description": "Latency telemetry for this record."
+    }
+  },
+  "required": [
+    "@id",
+    "identity",
+    "principal",
+    "commitment",
+    "prompt",
+    "inference",
+    "response",
+    "telemetry"
+  ],
+  "title": "PBOMRecord",
+  "type": "object"
+}

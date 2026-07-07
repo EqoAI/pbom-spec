@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+#Reference docs
+.reference/
+.references/
+
+# PBOM project-specific
+.DS_Store
+.pbom/
+
