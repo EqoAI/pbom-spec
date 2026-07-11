@@ -39,6 +39,28 @@ class ChainCorruptedError(PBOMError):
         self.details = details
 
 
+class UnsupportedMessageShapeError(PBOMError):
+    """Raised when canonicalize_messages() receives a message list shape
+    that is not supported in PBOM v1.0.0.
+
+    Multi-turn conversations, tool calls, and non-string content are
+    deferred to a future version. Adopters should either restructure
+    their call to a single system + single user turn, or concatenate
+    multi-turn content into strings themselves before calling
+    canonicalize_messages().
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        shape_detail: dict[str, object] | None = None,
+    ) -> None:
+        """Initialize the exception with optional shape diagnostics."""
+        super().__init__(message)
+        self.shape_detail = shape_detail
+
+
 class SchemaValidationError(PBOMError):
     """Raised when a record fails PBOM schema validation."""
 

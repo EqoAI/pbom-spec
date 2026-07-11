@@ -1,5 +1,7 @@
 """Public API surface for the PBOM package."""
 
+from .canonical import canonicalize_messages
+from .exceptions import UnsupportedMessageShapeError
 from pbom.emitter import PBOMEmitter
 from pbom.exceptions import (
     ChainCorruptedError,
@@ -18,9 +20,11 @@ __all__ = [
     "PBOMEmitter",
     "PBOMError",
     "PBOMRecord",
+    "UnsupportedMessageShapeError",
     "SchemaValidationError",
     "ValidationResult",
     "__version__",
+    "canonicalize_messages",
     "validate_chain",
     "validate_commitment",
 ]

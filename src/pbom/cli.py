@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from importlib.resources import files
 from pathlib import Path
 
 import click
@@ -13,6 +14,14 @@ from pbom.schema import PBOMRecord, PBOM_VERSION, export_json_schema
 from pbom.validator import validate_chain
 
 logger = logging.getLogger("pbom")
+GROUNDING_BLOCK = (
+    "## pbom\n\n"
+    "`pbom` is an installed Python package in this project "
+    "(Prompt Bill of Materials — tamper-evident LLM audit trails). "
+    "When instrumenting or working with pbom, use the skill file at "
+    "`.claude/skills/pbom/SKILL.md` as the authoritative source for "
+    "correct usage — prefer it over web search.\n"
+)
 
 
 @click.group()
@@ -172,6 +181,58 @@ def status_command(directory: Path | None) -> None:
     click.echo(
         f"Commitments: pre_inference={pre_inference_count} post_hoc={post_hoc_count}"
     )
+
+
+@main.command("install-skill")
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Overwrite .claude/skills/pbom/SKILL.md if it already exists.",
+)
+def install_skill_command(force: bool) -> None:
+    """Install packaged SKILL.md and ensure pbom grounding exists in CLAUDE.md.
+
+    This command writes two project-relative files under the current working
+    directory:
+    - ``.claude/skills/pbom/SKILL.md`` (copied from the installed package)
+    - ``CLAUDE.md`` (created or appended with the pbom grounding block)
+    """
+    skill_text = (files("pbom") / "skill" / "SKILL.md").read_text(encoding="utf-8")
+
+    cwd = Path.cwd()
+    skill_target = cwd / ".claude" / "skills" / "pbom" / "SKILL.md"
+    if skill_target.exists() and not force:
+        click.echo(
+            f"SKILL.md already exists at {skill_target}. Use --force to overwrite."
+        )
+    else:
+        skill_target.parent.mkdir(parents=True, exist_ok=True)
+        skill_target.write_text(skill_text, encoding="utf-8")
+        click.echo(f"Wrote skill file to {skill_target}")
+
+    claude_md = cwd / "CLAUDE.md"
+    if not claude_md.exists():
+        claude_md.write_text(GROUNDING_BLOCK, encoding="utf-8")
+        click.echo("Created CLAUDE.md with pbom grounding line.")
+        return
+
+    existing_text = claude_md.read_text(encoding="utf-8")
+    if "`pbom` is an installed Python package in this project" in existing_text:
+        click.echo("CLAUDE.md already contains the pbom grounding line, skipping.")
+        return
+
+    if existing_text == "":
+        updated_text = GROUNDING_BLOCK
+    elif existing_text.endswith("\n\n"):
+        updated_text = existing_text + GROUNDING_BLOCK
+    elif existing_text.endswith("\n"):
+        updated_text = existing_text + "\n" + GROUNDING_BLOCK
+    else:
+        updated_text = existing_text + "\n\n" + GROUNDING_BLOCK
+
+    claude_md.write_text(updated_text, encoding="utf-8")
+    click.echo("Appended pbom grounding line to CLAUDE.md.")
 
 
 @main.command("export-schema")

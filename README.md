@@ -60,6 +60,9 @@ See the specification and examples for full semantics and edge cases.
 | `pbom validate <dir>` | Validate chain integrity and commitment status for a PBOM directory. |
 | `pbom status <dir>` | Show chain status summary (record count, head info). |
 | `pbom export-schema <path>` | Export the PBOM JSON Schema to a file. |
+| `pbom install-skill [--force]` | Install the pbom skill file into `.claude/skills/pbom/` and add a pbom grounding note to `CLAUDE.md`. |
+
+`pbom install-skill` is for teams using an agentic coding tool (like Claude Code) to instrument pbom. It writes two things into your project: the skill file at `.claude/skills/pbom/SKILL.md`, and a short grounding note appended to `CLAUDE.md` (created if absent). Both operations are safe to re-run: the skill file is not overwritten unless you pass `--force`, and the `CLAUDE.md` note is only added once.
 
 ## What's Captured
 
@@ -94,6 +97,7 @@ If you want all-in-one model routing, enforcement, and hosted analytics today, t
 
 - [PBOM specification (`docs/spec.md`)](docs/spec.md)
 - [Field-by-field guide (`docs/fields.md`)](docs/fields.md)
+- [Converting message lists (`docs/canonical.md`)](docs/canonical.md)
 - [Examples (`examples/`)](examples/)
 
 ## Contributing

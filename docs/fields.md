@@ -119,6 +119,14 @@ This section captures **timing measurements for the interaction**.
 - `telemetry.total_latency_ms`: Optional end-to-end latency.
 - `telemetry.inference_latency_ms`: Optional model-inference-only latency.
 
+### A note on measured values
+
+Latency and token-count fields should reflect what actually happened, not guessed or placeholder values. In practice, `inference_latency_ms` and `total_latency_ms` should come from real timing measurements of the call (for example, a monotonic timer around the LLM request), and `response_token_count` should come from provider usage reporting when available.
+
+PBOM's default token counter is a rough character-based approximation and is intended for input-side estimate fields. For fields that represent real measured quantities, pass real measured values.
+
+A PBOM record is an audit trail. A fabricated latency or token count is a false statement in that trail. If you do not have a real value, leave the field at its default (many telemetry fields are optional and default to null) instead of inventing one.
+
 ## 6.8 Context Management (`context_management`)
 
 This section captures **conversation-history and cache facts when available**.
@@ -229,6 +237,14 @@ This field captures **how much raw content is stored in the record**.
 - `storage_mode`: Either:
   - `fingerprint`: keep hashes/metadata, do not store raw prompt/response text.
   - `forensic`: may include raw prompt/response text in addition to hashes.
+
+**Important — the config file and the constructor are independent.**  
+`pbom init` writes a `storage_mode` value into `.pbom/config.json`, but the emitter does not read that file. The emitter uses only the `storage_mode` argument passed to `PBOMEmitter(...)`, which defaults to `"fingerprint"`. That means changing `config.json` to `"forensic"` does not change what the emitter writes; if you do not pass `storage_mode="forensic"` in code, records will still be fingerprint mode (hashes only, no raw text). To store raw content, set forensic mode directly on the constructor. The config file is used by the CLI, not by the emitter.
+
+```python
+# Correct: forensic mode is set on the constructor
+emitter = PBOMEmitter(application_id="my-agent", storage_mode="forensic")
+```
 
 Also note: non-standard legacy fields such as `origin`, `verdict`, `timestamp`, and `pbom_signature` are not part of the PBOM open standard top-level schema.
 

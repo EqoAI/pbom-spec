@@ -1,6 +1,6 @@
 ---
 name: pbom
-description: How to correctly emit, validate, and reason about PBOM (Prompt Bill of Materials) tamper-evident audit records for LLM calls. Load this when adding audit logging to LLM interactions, working with PBOMEmitter, running `pbom validate`/`pbom status`, or wiring PBOM chain validation into CI. Not needed for unrelated tasks.
+description: Correct usage of the installed 'pbom' Python package (Prompt Bill of Materials) — tamper-evident, hash-chained JSON audit records for LLM calls via PBOMEmitter. Load this when instrumenting or adding audit logging to LLM calls, wrapping an LLM call to record what was asked/answered, or running 'pbom validate'/'pbom status'. This skill is the authority on the pbom API; do not web-search it. Not needed for unrelated tasks.
 ---
 
 # Using PBOM (Prompt Bill of Materials)

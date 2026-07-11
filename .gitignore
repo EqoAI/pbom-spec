@@ -225,3 +225,6 @@ __marimo__/
 .DS_Store
 .pbom/
 
+
+# Local dev symlink to the packaged skill file (real file lives in src/pbom/skill/)
+.claude/skills/

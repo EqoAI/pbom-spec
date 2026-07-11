@@ -10,12 +10,28 @@ import json
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Literal, Any
+from typing import Annotated, Optional, Literal, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 PBOM_VERSION = "1.0.0"
 logger = logging.getLogger("pbom")
+
+
+def _coerce_optional_int(value: object) -> Optional[int]:
+    """Coerce a non-None numeric value to int, leaving None as None.
+
+    Latency values are frequently computed from float clock
+    arithmetic (e.g. time.monotonic() differences). This lets callers
+    pass a float while the record still stores an int. None is passed
+    through unchanged so optional fields remain optional.
+    """
+    if value is None:
+        return None
+    return int(value)
+
+
+CoercedOptionalInt = Annotated[Optional[int], BeforeValidator(_coerce_optional_int)]
 
 
 class EntryIdentity(BaseModel):
@@ -204,11 +220,11 @@ class ResponseRecord(BaseModel):
 class Telemetry(BaseModel):
     """Latency telemetry associated with record emission and inference."""
 
-    total_latency_ms: Optional[int] = Field(
+    total_latency_ms: CoercedOptionalInt = Field(
         default=None,
         description="End-to-end operation latency in ms.",
     )
-    inference_latency_ms: Optional[int] = Field(
+    inference_latency_ms: CoercedOptionalInt = Field(
         default=None,
         description="Model inference latency in ms.",
     )
