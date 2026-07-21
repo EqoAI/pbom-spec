@@ -12,7 +12,7 @@ from pbom.exceptions import (
 from pbom.schema import PBOMRecord
 from pbom.validator import ValidationResult, validate_chain, validate_commitment
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "ChainCorruptedError",

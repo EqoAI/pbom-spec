@@ -11,6 +11,7 @@ from pbom.emitter import PBOMEmitter
 from pbom.exceptions import InvalidCommitmentError
 from pbom.hashing import compute_sha256
 from pbom.schema import PBOMRecord
+from pbom.validator import validate_chain
 
 
 def test_api1_basic_flow_returns_pre_inference_verified_record(tmp_path) -> None:
@@ -389,3 +390,90 @@ def test_emit_model_fields_not_parsed(tmp_path) -> None:
 
     assert record.inference.model_family is None
     assert record.inference.model_provider is None
+
+
+def test_record_extensions_round_trip_and_chain_valid(tmp_path) -> None:
+    """extensions passthrough should persist verbatim and keep the chain valid."""
+    emitter = PBOMEmitter(
+        application_id="test", output_dir=tmp_path, sdk_version="0.1.0"
+    )
+
+    extensions = {"eqo.adk.shift_zero": {"verdict": "ALLOW"}}
+    record = emitter.record(
+        system_prompt="sys",
+        user_prompt="user",
+        model_id="openai/gpt-4o",
+        response_text="resp",
+        extensions=extensions,
+    )
+
+    assert record.extensions == extensions
+
+    files = sorted(tmp_path.glob("*.pbom.json"))
+    assert len(files) == 1
+    payload = json.loads(files[0].read_text(encoding="utf-8"))
+    assert payload["extensions"] == extensions
+
+    result = validate_chain(tmp_path)
+    assert result.is_valid is True
+
+
+def test_record_without_extensions_defaults_to_empty_dict(tmp_path) -> None:
+    """Callers passing no extensions still get extensions == {} (backward compat)."""
+    emitter = PBOMEmitter(
+        application_id="test", output_dir=tmp_path, sdk_version="0.1.0"
+    )
+
+    record = emitter.record(
+        system_prompt="sys",
+        user_prompt="user",
+        model_id="openai/gpt-4o",
+        response_text="resp",
+    )
+
+    assert record.extensions == {}
+
+
+def test_record_blocked_emits_null_response_section_and_chain_valid(tmp_path) -> None:
+    """record_blocked() should emit an explicit no-response section, chain valid."""
+    emitter = PBOMEmitter(
+        application_id="test", output_dir=tmp_path, sdk_version="0.1.0"
+    )
+
+    record = emitter.record_blocked(
+        system_prompt="sys",
+        user_prompt="user",
+        model_id="openai/gpt-4o",
+    )
+
+    assert record.response.response_hash is None
+    assert record.response.response_text is None
+    assert record.response.response_token_count == 0
+    assert record.response.stop_reason is None
+    assert record.response.thinking_token_count is None
+
+    result = validate_chain(tmp_path)
+    assert result.is_valid is True
+
+
+def test_record_blocked_distinguishable_from_empty_response(tmp_path) -> None:
+    """A blocked record must not be confusable with an empty-string response."""
+    emitter = PBOMEmitter(
+        application_id="test", output_dir=tmp_path, sdk_version="0.1.0"
+    )
+
+    blocked = emitter.record_blocked(
+        system_prompt="sys",
+        user_prompt="user",
+        model_id="openai/gpt-4o",
+    )
+    empty = emitter.record(
+        system_prompt="sys",
+        user_prompt="user",
+        model_id="openai/gpt-4o",
+        response_text="",
+    )
+
+    assert blocked.response.response_hash is None
+    assert empty.response.response_hash == compute_sha256("")
+    assert empty.response.response_hash is not None

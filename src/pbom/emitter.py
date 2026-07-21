@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from types import TracebackType
-from typing import Callable, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 from uuid import uuid4
 
 from .chain import ChainState
@@ -104,6 +104,7 @@ class CommitmentContext:
         provider_metadata: Optional[ProviderMetadata] = None,
         structural_analysis: Optional[StructuralAnalysis] = None,
         action_primitives: Optional[list[ActionPrimitiveDetection]] = None,
+        extensions: Optional[dict[str, Any]] = None,
     ) -> PBOMRecord:
         """Finalize commitment, emit record, and return PBOMRecord."""
         if self._commitment is None:
@@ -167,6 +168,7 @@ class CommitmentContext:
             provider_metadata=provider_metadata,
             structural_analysis=structural_analysis,
             action_primitives=action_primitives or [],
+            extensions=extensions,
             commitment=self._commitment,
             commitment_verified=True,
             chain_sequence_number=chain_sequence_number,
@@ -317,6 +319,7 @@ class PBOMEmitter:
         provider_metadata: Optional[ProviderMetadata] = None,
         structural_analysis: Optional[StructuralAnalysis] = None,
         action_primitives: Optional[list[ActionPrimitiveDetection]] = None,
+        extensions: Optional[dict[str, Any]] = None,
     ) -> PBOMRecord:
         """Emit a post-hoc record (timestamp anchor only).
 
@@ -396,11 +399,127 @@ class PBOMEmitter:
             provider_metadata=provider_metadata,
             structural_analysis=structural_analysis,
             action_primitives=action_primitives or [],
+            extensions=extensions,
             commitment=commitment,
             commitment_verified=False,
             chain_sequence_number=chain_sequence_number,
             previous_entry_hash=previous_entry_hash,
             prompt_hashes=prompt_hashes,
+        )
+
+        canonical_json = self._save_record(record)
+        self._chain_state.update_chain(canonical_json)
+        return record
+
+    def record_blocked(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        model_id: str,
+        model_family: Optional[str] = None,
+        model_provider: Optional[str] = None,
+        inference_latency_ms: Optional[int] = None,
+        total_latency_ms: Optional[int] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        streaming: Optional[bool] = None,
+        context_window_max: Optional[int] = None,
+        context_utilization_pct: Optional[float] = None,
+        prompt_template: Optional[PromptTemplate] = None,
+        prompt_structural_fingerprint: Optional[StructuralFingerprint] = None,
+        context_management: Optional[ContextManagement] = None,
+        provider_metadata: Optional[ProviderMetadata] = None,
+        structural_analysis: Optional[StructuralAnalysis] = None,
+        action_primitives: Optional[list[ActionPrimitiveDetection]] = None,
+        extensions: Optional[dict[str, Any]] = None,
+    ) -> PBOMRecord:
+        """Emit a record for a generation where no response occurred.
+
+        Use this when a generation was stopped before any model output was
+        produced -- for example, the request was blocked before inference. The
+        record captures the prompt and its chain linkage but its response
+        section is explicitly empty: ``response_hash=None``,
+        ``response_text=None``, ``response_token_count=0``, ``stop_reason=None``,
+        and ``thinking_token_count=None``. No response hash is computed because
+        there is no response.
+
+        This is deliberately distinct from recording an empty-string response
+        via ``record(..., response_text="")``: an empty response still hashes to
+        the SHA-256 of ``""`` and represents "the model returned nothing," while
+        a blocked record represents "the model was never invoked."
+
+        Like ``record()``, this constructs the commitment retroactively
+        (``commitment_type="post_hoc"``, ``commitment_verified=False``); it is a
+        timestamp anchor and chain link, not a pre-inference guarantee.
+
+        Args:
+            system_prompt: The system prompt that would have been sent.
+            user_prompt: The user prompt that would have been sent.
+            model_id: Required. The model identifier that would have been used.
+            extensions: Optional non-standard data to preserve on the record.
+            (Other args: optional fields populated only if the caller provides
+            them. None values become null in the record; the emitter does not
+            invent values for unspecified fields.)
+
+        Returns:
+            The PBOMRecord that was written to disk.
+        """
+        commitment = create_commitment(
+            system_prompt,
+            user_prompt,
+            # KNOWN LIMITATION: commitment_type is a required Literal["pre_inference",
+            # "post_hoc"]; both values assert an inference occurred. A no-inference record
+            # (nothing was generated) fits neither. Using "post_hoc" as the least-wrong
+            # interim value — it understates the crypto guarantee rather than overstating it.
+            # A dedicated "no_inference" value is a format change deferred to the next
+            # PBOM_VERSION release. Tracked in issue #1.
+            commitment_type="post_hoc",
+        )
+        # Post-hoc reveal can land in the same millisecond as creation; sleep 1ms
+        # to guarantee strict ordering before reveal_commitment() asserts it.
+        time.sleep(0.001)
+        reveal_commitment(commitment)
+
+        # Post-hoc: total_latency_ms is caller-provided only. The emitter has no
+        # way to measure it after the fact.
+        resolved_total_latency_ms = total_latency_ms
+
+        prompt_hashes = self._hash_prompt(system_prompt, user_prompt)
+        chain_sequence_number, previous_entry_hash = (
+            self._chain_state.next_chain_position()
+        )
+
+        record = self._build_record(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model_id=model_id,
+            model_family=model_family,
+            model_provider=model_provider,
+            response_text=None,
+            response_token_count=None,
+            inference_latency_ms=inference_latency_ms,
+            total_latency_ms=resolved_total_latency_ms,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            streaming=streaming,
+            context_window_max=context_window_max,
+            context_utilization_pct=context_utilization_pct,
+            stop_reason=None,
+            thinking_token_count=None,
+            prompt_template=prompt_template,
+            prompt_structural_fingerprint=prompt_structural_fingerprint,
+            context_management=context_management,
+            provider_metadata=provider_metadata,
+            structural_analysis=structural_analysis,
+            action_primitives=action_primitives or [],
+            extensions=extensions,
+            commitment=commitment,
+            commitment_verified=False,
+            chain_sequence_number=chain_sequence_number,
+            previous_entry_hash=previous_entry_hash,
+            prompt_hashes=prompt_hashes,
+            has_response=False,
         )
 
         canonical_json = self._save_record(record)
@@ -431,7 +550,7 @@ class PBOMEmitter:
         model_id: str,
         model_family: Optional[str],
         model_provider: Optional[str],
-        response_text: str,
+        response_text: Optional[str],
         response_token_count: Optional[int],
         inference_latency_ms: Optional[int],
         total_latency_ms: Optional[int],
@@ -448,13 +567,21 @@ class PBOMEmitter:
         provider_metadata: Optional[ProviderMetadata],
         structural_analysis: Optional[StructuralAnalysis],
         action_primitives: list[ActionPrimitiveDetection],
+        extensions: Optional[dict[str, Any]],
         commitment: Commitment,
         commitment_verified: bool,
         chain_sequence_number: int,
         previous_entry_hash: Optional[str],
         prompt_hashes: dict[str, str],
+        has_response: bool = True,
     ) -> PBOMRecord:
-        """Build PBOMRecord from provided metadata and computed hashes."""
+        """Build PBOMRecord from provided metadata and computed hashes.
+
+        When ``has_response`` is False, the response section is emitted as an
+        explicit no-response marker (all null fields, token count 0) and no
+        response hash is computed. This supports records for generations where
+        no model output occurred (see ``record_blocked``).
+        """
         now_utc = datetime.now(timezone.utc)
         created_at_epoch_ms = int(now_utc.timestamp() * 1000)
         created_at_iso = now_utc.isoformat(timespec="milliseconds").replace(
@@ -464,6 +591,32 @@ class PBOMEmitter:
 
         system_tokens = self._estimate_tokens(system_prompt)
         user_tokens = self._estimate_tokens(user_prompt)
+
+        if has_response:
+            assert response_text is not None
+            response = ResponseRecord(
+                response_hash=compute_sha256(response_text),
+                response_token_count=(
+                    response_token_count
+                    if response_token_count is not None
+                    else self._estimate_tokens(response_text)
+                ),
+                stop_reason=stop_reason,
+                thinking_token_count=thinking_token_count,
+                response_text=response_text
+                if self.storage_mode == "forensic"
+                else None,
+            )
+        else:
+            # No response occurred (e.g. blocked before inference). Do not hash
+            # anything -- there is no response to hash.
+            response = ResponseRecord(
+                response_hash=None,
+                response_token_count=0,
+                stop_reason=None,
+                thinking_token_count=None,
+                response_text=None,
+            )
 
         prompt = PromptRecord(
             raw_content=RawContent(
@@ -520,19 +673,7 @@ class PBOMEmitter:
                 context_window_max=context_window_max,
                 context_utilization_pct=context_utilization_pct,
             ),
-            response=ResponseRecord(
-                response_hash=compute_sha256(response_text),
-                response_token_count=(
-                    response_token_count
-                    if response_token_count is not None
-                    else self._estimate_tokens(response_text)
-                ),
-                stop_reason=stop_reason,
-                thinking_token_count=thinking_token_count,
-                response_text=response_text
-                if self.storage_mode == "forensic"
-                else None,
-            ),
+            response=response,
             telemetry=Telemetry(
                 total_latency_ms=total_latency_ms,
                 inference_latency_ms=inference_latency_ms,
@@ -541,7 +682,7 @@ class PBOMEmitter:
             provider_metadata=provider_metadata,
             structural_analysis=structural_analysis,
             action_primitives=action_primitives,
-            extensions={},
+            extensions=extensions if extensions is not None else {},
             storage_mode=self.storage_mode,
         )
 
