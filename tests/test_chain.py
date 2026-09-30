@@ -280,3 +280,61 @@ def test_resume_empty_directory_resets_state(tmp_path) -> None:
 
     assert sequence == 1
     assert previous_hash is None
+
+
+def test_concurrent_emitters_do_not_duplicate_sequence(tmp_path) -> None:
+    """Two independent emitters racing record() must not share a sequence.
+
+    Before the claim-marker fix, each PBOMEmitter cached chain head at
+    construction via resume_from(). After a barrier both called record(),
+    both read the same stale (sequence, hash) from their private ChainState,
+    and both wrote chain_sequence_number=1. record() itself did not raise;
+    the duplicate only appeared on a later resume_from() of the directory.
+    This test fails on that outcome: duplicate sequences on disk and/or
+    ChainCorruptedError from a fresh resume_from().
+    """
+    import threading
+
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+
+    def worker(worker_id: int) -> None:
+        try:
+            emitter = PBOMEmitter(
+                application_id=f"race-{worker_id}",
+                output_dir=tmp_path,
+                sdk_version="0.1.0",
+            )
+            barrier.wait()
+            emitter.record(
+                system_prompt="sys",
+                user_prompt=f"user-{worker_id}",
+                model_id="test/model",
+                response_text=f"response-{worker_id}",
+            )
+        except BaseException as exc:  # noqa: BLE001 — collect any failure
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=(1,)),
+        threading.Thread(target=worker, args=(2,)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == [], f"emitter record() raised: {errors!r}"
+
+    files = sorted(tmp_path.glob("*.pbom.json"))
+    assert len(files) == 2
+
+    sequences = []
+    for path in files:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        sequences.append(payload["identity"]["chain_sequence_number"])
+
+    assert sorted(sequences) == [1, 2], f"duplicate or missing sequences: {sequences}"
+
+    # Fresh scan must accept the directory (no duplicate / gap / broken link).
+    ChainState().resume_from(tmp_path)

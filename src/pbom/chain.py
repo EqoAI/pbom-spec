@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from pathlib import Path
 from typing import Optional
@@ -17,24 +18,74 @@ from .hashing import compute_sha256
 
 logger = logging.getLogger("pbom")
 
+# Bound on claim retries when another process/thread holds the candidate.
+# Exhaustion is abnormal; raise rather than spinning forever.
+_MAX_CLAIM_ATTEMPTS = 1000
+
 
 class ChainState:
     """Thread-safe in-memory chain state with strict on-disk resume checks."""
 
     def __init__(self) -> None:
         """Initialize empty chain state guarded by an internal lock."""
-        self._lock = threading.Lock()
+        # RLock: next_chain_position holds the lock while calling resume_from /
+        # reset, which also take it for in-memory updates.
+        self._lock = threading.RLock()
         self._previous_entry_hash: Optional[str] = None
         self._chain_sequence: int = 0
+        # Set by resume_from(); next_chain_position re-scans this directory.
+        self._directory: Optional[Path] = None
 
     def next_chain_position(self) -> tuple[int, Optional[str]]:
         """Return next sequence number and current previous-entry hash.
 
-        All reads and writes of in-memory chain state happen under the lock.
+        When ``resume_from`` has bound this state to a directory, each call
+        re-derives the chain head from disk and claims the next sequence via
+        an exclusive create under ``.chain-claims/``. That coordinates
+        separate processes that do not share this in-memory object.
+
+        Without a bound directory (unit tests / pure in-memory use), falls
+        back to incrementing local state only.
         """
         with self._lock:
-            self._chain_sequence += 1
-            return self._chain_sequence, self._previous_entry_hash
+            if self._directory is None:
+                self._chain_sequence += 1
+                return self._chain_sequence, self._previous_entry_hash
+
+            directory = self._directory
+            claims_dir = directory / ".chain-claims"
+            claims_dir.mkdir(parents=True, exist_ok=True)
+
+            # Residual risk (pre-existing in spirit, not introduced by claims):
+            # if a process wins a claim file and then crashes before writing
+            # its *.pbom.json, that sequence number stays claimed forever and
+            # resume_from()'s contiguous-sequence check will fail for the
+            # directory afterward. Claim markers are never deleted — releasing
+            # one would reopen the cross-process duplicate-sequence race.
+            # A crash mid-write already risked a similar gap before this fix.
+
+            for _attempt in range(_MAX_CLAIM_ATTEMPTS):
+                self.resume_from(directory)
+                candidate = self._chain_sequence + 1
+                claim_path = claims_dir / str(candidate)
+                try:
+                    fd = os.open(
+                        claim_path,
+                        os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    )
+                except FileExistsError:
+                    # Another writer claimed this number; rescan and retry.
+                    continue
+                os.close(fd)
+                self._chain_sequence = candidate
+                return candidate, self._previous_entry_hash
+
+            raise ChainCorruptedError(
+                "Failed to claim a chain sequence number after repeated attempts.",
+                details=(
+                    f"exhausted {_MAX_CLAIM_ATTEMPTS} claim attempts in {directory}"
+                ),
+            )
 
     def update_chain(self, canonical_json: str) -> str:
         """Update chain with canonical JSON and return its SHA-256 hash."""
@@ -51,7 +102,14 @@ class ChainState:
         - Sequence numbers must be unique and contiguous from 1..N
         - For each consecutive pair, hash(previous_record_canonical_json) must
           equal ``next.identity.previous_entry_hash``
+
+        Also stores ``directory`` on this instance so later
+        ``next_chain_position()`` calls can re-scan without a signature change.
+        Claim markers live under ``directory / ".chain-claims"`` and are not
+        matched by the ``*.pbom.json`` glob used here.
         """
+        self._directory = directory
+        # Only *.pbom.json — subdirectory .chain-claims/ is invisible here.
         record_files = sorted(directory.glob("*.pbom.json"))
         if not record_files:
             self.reset()
