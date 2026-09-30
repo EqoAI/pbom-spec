@@ -105,8 +105,8 @@ If you want all-in-one model routing, enforcement, and hosted analytics today, t
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contributors
-Aishwarya Athreya
-Kavia Venkatesh
+- Aishwarya Athreya
+- Kavia Venkatesh
 
 ## License
 
