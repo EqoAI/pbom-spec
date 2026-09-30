@@ -114,4 +114,4 @@ Apache 2.0. See [LICENSE](LICENSE).
 
 ---
 
-Built and maintained by Eqo. PBOM is an open standard; anyone may implement it.
+PBOM is an open standard; anyone may implement it.
