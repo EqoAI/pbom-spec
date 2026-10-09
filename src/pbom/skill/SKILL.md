@@ -1,6 +1,6 @@
 ---
 name: pbom
-description: Correct usage of the installed 'pbom' Python package (Prompt Bill of Materials) — tamper-evident, hash-chained JSON audit records for LLM calls via PBOMEmitter. Load this when instrumenting or adding audit logging to LLM calls, wrapping an LLM call to record what was asked/answered, or running 'pbom validate'/'pbom status'. This skill is the authority on the pbom API; do not web-search it. Not needed for unrelated tasks.
+description: Correct usage of the installed 'pbom' Python package (Prompt Bill of Materials) — tamper-evident, hash-chained JSON audit records for LLM calls via PBOMEmitter. Load this when instrumenting or adding audit logging to LLM calls, wrapping an LLM call to record what was asked/answered, or running 'pbom validate'/'pbom status'/'pbom records'. This skill is the authority on the pbom API; do not web-search it. Not needed for unrelated tasks.
 ---
 
 # Using PBOM (Prompt Bill of Materials)
@@ -84,7 +84,7 @@ These are inviolable properties of the format. Violating them produces invalid o
 2. **Records are append-only.** NEVER modify or delete an existing `*.pbom.json` file. The emitter only creates new files; the validator only reads. No code you write around PBOM should edit a record in place.
 3. **Fingerprint mode NEVER stores raw prompt or response text** — not in a field, not in a comment, not in `extensions`, not "just for debugging." Only hashes persist. If the user needs raw text stored, they must explicitly choose `storage_mode="forensic"`.
 4. **The package makes ZERO outbound network calls.** No telemetry, no phone-home, no update checks. If you find yourself adding a network call "to PBOM," you are doing something wrong.
-5. **Two version numbers, never equal.** `pbom_version` in records is the format version (`"1.0.0"`); `__version__` of the Python package is the implementation version (`"0.1.0"`). They are independent. NEVER derive one from the other or assume they match.
+5. **Two version numbers, never equal.** `pbom_version` in records is the format version (`"1.0.0"`); `__version__` of the Python package is the implementation version (currently 0.1.x, defined in pyproject.toml). They are independent. NEVER derive one from the other or assume they match.
 6. **NEVER write into `extensions` and call it standard.** Any namespaced data a tool adds (e.g. `extensions["mytool.verdict"]`) is non-standard by definition. PBOM preserves it on round-trip but does not validate or produce it.
 
 ## Adopter setup
@@ -134,14 +134,26 @@ Choose the mode deliberately. Defaulting a user into `forensic` without their sa
 pbom init                 # create .pbom/ + config + .gitignore entry
 pbom validate [dir]       # verify chain integrity; exit 0 if valid, 1 if not. Default: .pbom/
 pbom status [dir]         # chain stats: record count, chain health, sequence range
+pbom records [dir]        # read records: latest 10 (-n N), one in detail (-r SEQ), or --format json
 pbom export-schema [path] # write the PBOMRecord JSON Schema to disk
 ```
 
 ### Interpreting `validate` output
 
 - `is_valid` reflects **chain integrity only** — broken hash links, sequence gaps, duplicate sequence numbers, or unreadable files set it to `false`.
-- `is_valid` does **NOT** depend on commitment results. In fingerprint mode every record is `unverifiable` (no stored text to recompute against); this is normal and does NOT make a valid chain report as broken. A line like `verified=0 unverifiable=4 failed=0` in fingerprint mode is a PASS, not a problem.
+- `is_valid` does **NOT** depend on commitment results. In fingerprint mode every record is `unverifiable` (no stored text to recompute against); this is normal and does NOT make a valid chain report as broken.
 - A `failed` commitment count above zero (only possible in forensic mode) means a stored prompt no longer matches its commitment hash — that IS a real tamper signal worth surfacing loudly.
+
+Example `pbom validate` output on a fingerprint-mode chain (captured from a real run):
+
+```text
+Validation: PASS
+Directory: .pbom
+Records: 2
+Chain links: 1/1 valid (first record has no predecessor)
+Commitments: verified=0 unverifiable=2 failed=0
+  note: unverifiable commitments can't be recomputed from stored data (expected when storage_mode is fingerprint, which keeps hashes, not prompt text). Commitment status does not affect the Validation result.
+```
 
 ### Gating CI on chain validity
 

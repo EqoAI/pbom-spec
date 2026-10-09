@@ -45,7 +45,15 @@ This section captures **cryptographic proof metadata for the prompt you used**.
 - `commitment.commitment_hash`: SHA-256 hash of `(canonical prompt JSON + nonce)` when available.
 - `commitment.commitment_ts`: Epoch ms time when commitment was created.
 - `commitment.nonce_revealed_ts`: Epoch ms time when reveal happened; for pre-inference, should be later than `commitment_ts`.
-- `commitment.commitment_verified`: Whether recomputation succeeded for this record.
+- `commitment.commitment_verified`: Whether the emitter verified the
+  commitment at emission time, recomputing the hash from the prompt text it
+  held in memory. `true` for `pre_inference` records from `commit()`;
+  `false` for post-hoc records from `record()` (spec §6.3.6). This is the
+  emitter's own check, stored as data. A later verifier checks
+  independently (spec §7.5): in `fingerprint` mode the prompt text is not
+  stored, so `pbom validate` reports these commitments as unverifiable.
+  Both are correct. One answers "did it verify when written?", the other
+  "can it be verified now?"
 
 ## 6.4 Prompt (`prompt`)
 
