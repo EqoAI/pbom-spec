@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -228,3 +230,13 @@ def test_action_primitive_detection_rejects_out_of_range_confidence() -> None:
             risk_level="low",
             category="DATA_OPERATIONS",
         )
+
+
+def test_importing_schema_emits_no_user_warnings() -> None:
+    """pbom.schema must import cleanly under -W error::UserWarning."""
+    result = subprocess.run(
+        [sys.executable, "-W", "error::UserWarning", "-c", "import pbom.schema"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
