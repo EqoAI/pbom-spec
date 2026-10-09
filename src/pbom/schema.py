@@ -162,6 +162,10 @@ class PromptRecord(BaseModel):
 class InferenceMetadata(BaseModel):
     """Model and runtime configuration used for inference."""
 
+    # Older pydantic 2.x reserves the "model_" prefix; these field names are
+    # part of the PBOM v1.0.0 schema and cannot be renamed.
+    model_config = ConfigDict(protected_namespaces=())
+
     model_id: str = Field(description="Full model identifier, e.g. openai/gpt-4o.")
     model_family: Optional[str] = Field(
         default=None,
