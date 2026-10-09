@@ -32,7 +32,7 @@ classifiers = [
 dev = [
   "pytest",
   "pytest-cov",
-  "ruff"
+  "ruff==0.15.14"
 ]
 
 [project.scripts]
