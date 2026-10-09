@@ -183,9 +183,7 @@ def test_validate_empty_directory_chain_links(tmp_path, monkeypatch) -> None:
     assert "(first record" not in result.output
 
 
-def test_validate_chain_links_includes_first_record_note(
-    tmp_path, monkeypatch
-) -> None:
+def test_validate_chain_links_includes_first_record_note(tmp_path, monkeypatch) -> None:
     """N-record chain should report (N-1)/(N-1) valid with first-record note."""
     monkeypatch.chdir(tmp_path)
     _emit_n_records(tmp_path / ".pbom", 3)
@@ -194,14 +192,10 @@ def test_validate_chain_links_includes_first_record_note(
     result = runner.invoke(main, ["validate"])
 
     assert result.exit_code == 0
-    assert (
-        "Chain links: 2/2 valid (first record has no predecessor)" in result.output
-    )
+    assert "Chain links: 2/2 valid (first record has no predecessor)" in result.output
 
 
-def test_validate_fingerprint_shows_unverifiable_note(
-    tmp_path, monkeypatch
-) -> None:
+def test_validate_fingerprint_shows_unverifiable_note(tmp_path, monkeypatch) -> None:
     """Fingerprint chain should print the unverifiable-commitments note."""
     monkeypatch.chdir(tmp_path)
     _emit_n_records(tmp_path / ".pbom", 1)
@@ -684,12 +678,7 @@ def _run_pbom_subprocess(
 ) -> subprocess.CompletedProcess[str]:
     """Invoke the pbom CLI in a subprocess with a hang-detecting timeout."""
     argv = ["pbom", *args]
-    script = (
-        "import sys\n"
-        "from pbom.cli import main\n"
-        f"sys.argv = {argv!r}\n"
-        "main()\n"
-    )
+    script = f"import sys\nfrom pbom.cli import main\nsys.argv = {argv!r}\nmain()\n"
     return subprocess.run(
         [sys.executable, "-c", script],
         cwd=cwd,
@@ -783,9 +772,7 @@ def _symlink_or_skip(link: Path, target: Path) -> None:
         pytest.skip("symlinks unsupported on this platform")
 
 
-def test_init_and_install_skill_refuse_symlinked_targets(
-    tmp_path, monkeypatch
-) -> None:
+def test_init_and_install_skill_refuse_symlinked_targets(tmp_path, monkeypatch) -> None:
     """Outside targets stay ORIGINAL; install-skill exits 1."""
     outside = tmp_path / "outside"
     outside.mkdir()

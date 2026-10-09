@@ -345,9 +345,7 @@ def test_validate_chain_deeply_nested_json_is_unreadable(tmp_path) -> None:
     assert str(nested) in result.unreadable_files
 
 
-def test_validate_chain_warning_omits_forensic_input_values(
-    tmp_path, caplog
-) -> None:
+def test_validate_chain_warning_omits_forensic_input_values(tmp_path, caplog) -> None:
     """ValidationError warnings must not leak forensic prompt text."""
     emitter = PBOMEmitter(
         application_id="test",

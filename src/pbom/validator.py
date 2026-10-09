@@ -198,9 +198,7 @@ def _load_record(path: Path) -> tuple[Optional[PBOMRecord], bool]:
         duplicate_found = [False]
 
         def _hook(pairs: list[tuple[str, object]]) -> dict[str, object]:
-            return _pairs_hook_detect_duplicates(
-                pairs, duplicate_found=duplicate_found
-            )
+            return _pairs_hook_detect_duplicates(pairs, duplicate_found=duplicate_found)
 
         raw_dict = json.loads(
             read_record_text(path),

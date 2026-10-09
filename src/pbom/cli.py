@@ -443,9 +443,7 @@ def _format_record_detail(record: PBOMRecord) -> str:
     terminal view never dumps sensitive content by accident.
     """
     prev = record.identity.previous_entry_hash
-    prev_display = (
-        _safe_display(prev) if prev is not None else "n/a (first record)"
-    )
+    prev_display = _safe_display(prev) if prev is not None else "n/a (first record)"
     raw = record.prompt.raw_content
 
     def _hash_or_na(value: str | None) -> str:
