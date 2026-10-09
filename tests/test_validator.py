@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -330,6 +331,181 @@ def test_schema_invalid_file_is_reported_as_unreadable(tmp_path) -> None:
     result = validate_chain(tmp_path)
     assert result.is_valid is False
     assert len(result.unreadable_files) == 1
+
+
+def test_validate_chain_deeply_nested_json_is_unreadable(tmp_path) -> None:
+    """validate_chain must catch RecursionError and mark file unreadable."""
+    nested = tmp_path / "nested.pbom.json"
+    nested.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
+
+    result = validate_chain(tmp_path)
+
+    assert result.is_valid is False
+    assert len(result.unreadable_files) == 1
+    assert str(nested) in result.unreadable_files
+
+
+def test_validate_chain_warning_omits_forensic_input_values(
+    tmp_path, caplog
+) -> None:
+    """ValidationError warnings must not leak forensic prompt text."""
+    emitter = PBOMEmitter(
+        application_id="test",
+        output_dir=tmp_path,
+        storage_mode="forensic",
+        sdk_version="0.1.0",
+    )
+    with emitter.commit("SYS-SECRET-MARKER", "user") as ctx:
+        ctx.complete(model_id="openai/gpt-4o", response_text="resp")
+    path = next(tmp_path.glob("*.pbom.json"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    del payload["prompt"]["raw_content"]["system_prompt_token_count"]
+    path.write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+    )
+
+    with caplog.at_level(logging.WARNING, logger="pbom"):
+        result = validate_chain(tmp_path)
+
+    assert result.is_valid is False
+    assert "SECRET-MARKER" not in caplog.text
+    assert "system_prompt_token_count" in caplog.text
+
+
+def test_validate_chain_warning_escapes_evil_extra_key(tmp_path, caplog) -> None:
+    """Extra-key locations with ESC must not appear raw in warnings."""
+    payload = _minimal_record_dict(sequence=1, previous_entry_hash=None)
+    payload["\x1b[31mevil"] = "x"
+    _write_record(tmp_path / "evil.pbom.json", payload)
+
+    with caplog.at_level(logging.WARNING, logger="pbom"):
+        validate_chain(tmp_path)
+
+    assert "\x1b" not in caplog.text
+
+
+def _path_for_sequence(directory: Path, sequence: int) -> Path:
+    """Return the on-disk path for the record with the given sequence number."""
+    for path in directory.glob("*.pbom.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload["identity"]["chain_sequence_number"] == sequence:
+            return path
+    raise AssertionError(f"no record with sequence {sequence}")
+
+
+def _emit_three(directory: Path, **emitter_kwargs: object) -> None:
+    """Emit a three-record chain into ``directory``."""
+    emitter = PBOMEmitter(
+        application_id="test",
+        output_dir=directory,
+        sdk_version="0.1.0",
+        **emitter_kwargs,  # type: ignore[arg-type]
+    )
+    for i in range(3):
+        with emitter.commit(f"sys{i}", f"user{i}") as ctx:
+            ctx.complete(model_id="openai/gpt-4o", response_text=f"resp{i}")
+
+
+def test_nested_unknown_field_marks_noncanonical(tmp_path) -> None:
+    """Unknown nested field in a middle record must fail as non-canonical."""
+    _emit_three(tmp_path)
+    path = _path_for_sequence(tmp_path, 2)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["prompt"]["raw_content"]["injected_note"] = "tamper"
+    path.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    result = validate_chain(tmp_path)
+
+    assert result.is_valid is False
+    assert str(path) in result.noncanonical_files
+
+
+def test_duplicate_key_marks_noncanonical(tmp_path) -> None:
+    """Duplicate JSON keys in a middle record must fail as non-canonical."""
+    _emit_three(tmp_path)
+    path = _path_for_sequence(tmp_path, 2)
+    text = path.read_text(encoding="utf-8")
+    text = text.replace(
+        '"model_id":',
+        '"model_id": "FAKE-MODEL", "model_id":',
+        1,
+    )
+    path.write_text(text, encoding="utf-8")
+
+    result = validate_chain(tmp_path)
+
+    assert result.is_valid is False
+    assert str(path) in result.noncanonical_files
+
+
+def test_string_sequence_number_marks_noncanonical(tmp_path) -> None:
+    """Type-coerced chain_sequence_number must fail as non-canonical."""
+    _emit_three(tmp_path)
+    path = _path_for_sequence(tmp_path, 2)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["identity"]["chain_sequence_number"] = "2"
+    path.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    result = validate_chain(tmp_path)
+
+    assert result.is_valid is False
+    assert str(path) in result.noncanonical_files
+
+
+def test_honest_chains_are_canonical(tmp_path) -> None:
+    """Emitter-built chains must remain canonical across APIs and modes."""
+    cases = [
+        tmp_path / "fingerprint",
+        tmp_path / "forensic",
+        tmp_path / "record",
+        tmp_path / "blocked",
+        tmp_path / "extensions",
+    ]
+    for case_dir in cases:
+        case_dir.mkdir()
+
+    _emit_three(cases[0], storage_mode="fingerprint")
+    _emit_three(cases[1], storage_mode="forensic")
+
+    post_hoc = PBOMEmitter(
+        application_id="test", output_dir=cases[2], sdk_version="0.1.0"
+    )
+    post_hoc.record(
+        system_prompt="sys",
+        user_prompt="user",
+        model_id="openai/gpt-4o",
+        response_text="resp",
+    )
+
+    blocked = PBOMEmitter(
+        application_id="test", output_dir=cases[3], sdk_version="0.1.0"
+    )
+    blocked.record_blocked(
+        system_prompt="sys",
+        user_prompt="user",
+        model_id="openai/gpt-4o",
+    )
+
+    with_ext = PBOMEmitter(
+        application_id="test", output_dir=cases[4], sdk_version="0.1.0"
+    )
+    with with_ext.commit("sys", "user") as ctx:
+        ctx.complete(
+            model_id="openai/gpt-4o",
+            response_text="resp",
+            extensions={"tool.key": {"nested": [1, 2.5, None, True]}},
+        )
+
+    for case_dir in cases:
+        result = validate_chain(case_dir)
+        assert result.is_valid is True, case_dir.name
+        assert result.noncanonical_files == [], case_dir.name
 
 
 def test_validate_chain_allows_single_non_one_sequence_for_current_behavior(

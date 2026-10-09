@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+from ._safe_io import read_record_text
 from .exceptions import ChainCorruptedError
 from .hashing import compute_sha256
 
@@ -120,7 +121,7 @@ class ChainState:
 
         for record_path in record_files:
             try:
-                raw_text = record_path.read_text(encoding="utf-8")
+                raw_text = read_record_text(record_path)
                 record_data = json.loads(raw_text)
             except (OSError, json.JSONDecodeError) as exc:
                 raise ChainCorruptedError(
