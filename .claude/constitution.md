@@ -28,7 +28,7 @@ This file ships in the public OSS repo at `.claude/constitution.md`. It is inten
 
 ## Versioning
 
-7. **`pbom_version` in emitted records is `"1.0.0"`. `__version__` of the Python package is `"0.1.0"`.** These are different concepts and must never be equal by accident. The format version reflects the stability of the PBOM open standard; the package version reflects the maturity of this Python implementation. Hardcode `PBOM_VERSION = "1.0.0"` as a module-level constant in `schema.py`. Do not derive one from the other.
+7. **`pbom_version` in emitted records is `"1.0.0"`. `__version__` of the Python package is the implementation version (currently 0.1.x, defined in pyproject.toml and src/pbom/__init__.py).** These are different concepts and must never be equal by accident. The format version reflects the stability of the PBOM open standard; the package version reflects the maturity of this Python implementation. Hardcode `PBOM_VERSION = "1.0.0"` as a module-level constant in `schema.py`. Do not derive one from the other.
 
 ---
 

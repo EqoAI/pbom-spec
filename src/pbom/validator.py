@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from pbom._safe_io import read_record_text
+from pbom._safe_log import describe_parse_error
 from pbom.hashing import compute_sha256
 from pbom.schema import PBOMRecord
 
@@ -16,7 +18,12 @@ logger = logging.getLogger("pbom")
 
 @dataclass
 class ValidationResult:
-    """Structured validation output for chain and commitment checks."""
+    """Structured validation output for chain and commitment checks.
+
+    ``details``, ``unreadable_files``, and ``noncanonical_files`` contain
+    strings derived from untrusted record files and file names. Callers must
+    escape them before displaying (terminal, HTML, or logs).
+    """
 
     total_records: int
     valid_links: int
@@ -24,6 +31,7 @@ class ValidationResult:
     sequence_gaps: list[tuple[int, int]] = field(default_factory=list)
     duplicate_sequences: list[int] = field(default_factory=list)
     unreadable_files: list[str] = field(default_factory=list)
+    noncanonical_files: list[str] = field(default_factory=list)
     commitment_results: dict[str, int] = field(
         default_factory=lambda: {"verified": 0, "unverifiable": 0, "failed": 0}
     )
@@ -63,15 +71,23 @@ def validate_chain(directory: Path) -> ValidationResult:
 
     parsed_records: list[PBOMRecord] = []
     unreadable_files: list[str] = []
+    noncanonical_files: list[str] = []
     details: list[str] = []
 
     for record_path in record_files:
-        record = _load_record(record_path)
+        record, noncanonical = _load_record(record_path)
         if record is None:
             path_str = str(record_path)
             unreadable_files.append(path_str)
             details.append(f"Unreadable file skipped during validation: {path_str}")
             continue
+        if noncanonical:
+            path_str = str(record_path)
+            noncanonical_files.append(path_str)
+            details.append(
+                "Non-canonical record (unknown fields, duplicate keys, or type "
+                f"coercion): {path_str}"
+            )
         parsed_records.append(record)
 
     parsed_records.sort(key=lambda rec: rec.identity.chain_sequence_number)
@@ -105,7 +121,11 @@ def validate_chain(directory: Path) -> ValidationResult:
         )
 
     is_valid = not (
-        unreadable_files or duplicate_sequences or sequence_gaps or broken_links
+        unreadable_files
+        or noncanonical_files
+        or duplicate_sequences
+        or sequence_gaps
+        or broken_links
     )
 
     return ValidationResult(
@@ -115,22 +135,92 @@ def validate_chain(directory: Path) -> ValidationResult:
         sequence_gaps=sequence_gaps,
         duplicate_sequences=duplicate_sequences,
         unreadable_files=unreadable_files,
+        noncanonical_files=noncanonical_files,
         commitment_results=commitment_results,
         is_valid=is_valid,
         details=details,
     )
 
 
-def _load_record(path: Path) -> Optional[PBOMRecord]:
-    """Load and validate a PBOM record file, returning None on parse failure."""
+def _pairs_hook_detect_duplicates(
+    pairs: list[tuple[str, object]],
+    *,
+    duplicate_found: list[bool],
+) -> dict[str, object]:
+    """Build a dict like json.loads, but flag duplicate keys at this object depth.
+
+    Nested objects each invoke the hook, so duplicates at any depth are caught.
+    Last value wins (same as the default decoder) so model validation can proceed
+    and the record still participates in link checks.
+    """
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            duplicate_found[0] = True
+        result[key] = value
+    return result
+
+
+def _canonical_json_bytes(payload: object) -> str:
+    """Canonical JSON string for byte-for-byte content comparison."""
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _is_noncanonical_payload(
+    raw_dict: dict[str, object],
+    record: PBOMRecord,
+    *,
+    had_duplicate_keys: bool,
+) -> bool:
+    """True if on-disk JSON is not exactly the hashed record shape.
+
+    Compares canonical JSON strings (not dict equality): Python treats
+    ``1 == 1.0 == True``, which would hide type-coercion tampers. Parsing
+    normalizes content (unknown fields dropped, duplicates collapsed, types
+    coerced), so this check ensures the file contains exactly what was hashed.
+    """
+    if had_duplicate_keys:
+        return True
+    raw_canonical = _canonical_json_bytes(raw_dict)
+    model_canonical = _canonical_json_bytes(record.to_json_dict())
+    return raw_canonical != model_canonical
+
+
+def _load_record(path: Path) -> tuple[Optional[PBOMRecord], bool]:
+    """Load a record; return ``(record, is_noncanonical)``.
+
+    ``(None, False)`` means the file was unreadable. A non-canonical file still
+    returns the parsed model so link checks run unchanged. Parsing alone is not
+    enough for tamper-evidence: pydantic drops unknown nested fields, collapses
+    duplicate keys, and coerces types, so the file must match the hashed shape.
+    """
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return PBOMRecord.model_validate(payload)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        duplicate_found = [False]
+
+        def _hook(pairs: list[tuple[str, object]]) -> dict[str, object]:
+            return _pairs_hook_detect_duplicates(pairs, duplicate_found=duplicate_found)
+
+        raw_dict = json.loads(
+            read_record_text(path),
+            object_pairs_hook=_hook,
+        )
+        if not isinstance(raw_dict, dict):
+            raise ValueError("PBOM record root must be a JSON object")
+        record = PBOMRecord.model_validate(raw_dict)
+        noncanonical = _is_noncanonical_payload(
+            raw_dict, record, had_duplicate_keys=duplicate_found[0]
+        )
+        return record, noncanonical
+    except (OSError, json.JSONDecodeError, ValueError, RecursionError) as exc:
         # File may be corrupted or not valid PBOM JSON — skip it but
         # inform the caller so it can be reported in ValidationResult.
-        logger.warning("Failed to read PBOM record %s: %s", path, exc)
-        return None
+        # RecursionError: crafted deep nesting can exceed the JSON parser limit.
+        logger.warning(
+            "Failed to read PBOM record %r: %r",
+            str(path),
+            describe_parse_error(exc),
+        )
+        return None, False
 
 
 def _canonical_record_hash(record: PBOMRecord) -> str:

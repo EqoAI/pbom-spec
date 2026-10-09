@@ -2,15 +2,15 @@
 
 PBOM is the open standard for tamper-evident LLM audit trails. This package is the reference implementation.
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)
-[![CI](https://github.com/eqo/pbom-spec/actions/workflows/ci.yml/badge.svg)](https://github.com/eqo/pbom-spec/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/EqoAI/pbom-spec/blob/main/LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB)
+[![CI](https://github.com/EqoAI/pbom-spec/actions/workflows/ci.yml/badge.svg)](https://github.com/EqoAI/pbom-spec/actions/workflows/ci.yml)
 
 ## What is PBOM?
 
 PBOM (Prompt Bill of Materials) is an open JSON-LD format for recording LLM interactions as tamper-evident records. Each record captures identity, prompt fingerprints, model metadata, response fingerprints, telemetry, and hash links to prior records.
 
-**Security model.** PBOM provides tamper-evidence *relative to an external anchor*. Chain linking makes in-place modification and mid-chain deletion detectable on their own; detecting deliberate rewriting or truncation of the chain requires holding one record hash outside the `.pbom/` directory. Records are unsigned in v1.0.0 — the chain proves linkage, not authorship. See [Security model](docs/spec.md#12-security-model) in the specification for the full treatment.
+**Security model.** PBOM provides tamper-evidence *relative to an external anchor*. Chain linking makes in-place modification and mid-chain deletion detectable on their own; detecting deliberate rewriting or truncation of the chain requires holding one record hash outside the `.pbom/` directory. Records are unsigned in v1.0.0 — the chain proves linkage, not authorship. See [Security model](https://github.com/EqoAI/pbom-spec/blob/main/docs/spec.md#12-security-model) in the specification for the full treatment.
 
 The goal is: make LLM interactions auditable without locking teams into one provider or one runtime. PBOM gives you verifiable evidence about what was sent and what came back, while keeping storage mode flexible (`fingerprint` vs `forensic`) and extension-friendly.
 
@@ -33,14 +33,35 @@ pbom init
 from pbom import PBOMEmitter
 emitter = PBOMEmitter(application_id="demo-app", storage_mode="fingerprint")
 with emitter.commit(system_prompt="You are concise.", user_prompt="Summarize PBOM.") as commit:
-    response_text = call_your_llm()  # your LLM client call
+    response_text = "PBOM records LLM calls as tamper-evident JSON."  # replace with your LLM call
     record = commit.complete(response_text=response_text, model_id="gpt-4.1")
 print(record.identity.entry_id)
-print(record.commitment.commitment_verified)
 ```
 
+Each call writes one JSON record to `.pbom/` (created if missing), and `pbom init` adds `.pbom/` to `.gitignore` when a `.gitignore` exists.
+
 ```bash
-pbom validate .pbom/
+pbom records          # latest records
+pbom records -r 1    # one record in detail
+pbom validate        # check chain integrity
+```
+
+### What you get
+
+Records are hash-linked, so editing a past record breaks the chain and `pbom validate` fails.
+
+```text
+SEQ  TIMESTAMP                 MODEL    COMMITMENT     PRIMITIVES
+---  ------------------------  -------  -------------  ----------
+1    2026-10-08T02:33:39.192Z  gpt-4.1  pre_inference  0         
+2    2026-10-08T02:33:39.291Z  gpt-4.1  pre_inference  0         
+3    2026-10-08T02:33:39.391Z  gpt-4.1  pre_inference  0         
+Validation: PASS
+Directory: .pbom
+Records: 3
+Chain links: 2/2 valid (first record has no predecessor)
+Commitments: verified=0 unverifiable=3 failed=0
+  note: unverifiable commitments can't be recomputed from stored data (expected when storage_mode is fingerprint, which keeps hashes, not prompt text). Commitment status does not affect the Validation result.
 ```
 
 ## The Two APIs
@@ -58,6 +79,7 @@ See the specification and examples for full semantics and edge cases.
 | --- | --- |
 | `pbom init` | Create and initialize a local PBOM chain directory. |
 | `pbom validate <dir>` | Validate chain integrity and commitment status for a PBOM directory. |
+| `pbom records [dir]` | Read chain contents from the terminal: latest records (`-n N`), one record in detail (`-r SEQ`), or full JSON (`--format json`). Table views show hashes only. |
 | `pbom status <dir>` | Show chain status summary (record count, head info). |
 | `pbom export-schema <path>` | Export the PBOM JSON Schema to a file. |
 | `pbom install-skill [--force]` | Install the pbom skill file into `.claude/skills/pbom/` and add a pbom grounding note to `CLAUDE.md`. |
@@ -95,14 +117,14 @@ If you want all-in-one model routing, enforcement, and hosted analytics today, t
 
 ## Documentation
 
-- [PBOM specification (`docs/spec.md`)](docs/spec.md)
-- [Field-by-field guide (`docs/fields.md`)](docs/fields.md)
-- [Converting message lists (`docs/canonical.md`)](docs/canonical.md)
-- [Examples (`examples/`)](examples/)
+- [PBOM specification (`docs/spec.md`)](https://github.com/EqoAI/pbom-spec/blob/main/docs/spec.md)
+- [Field-by-field guide (`docs/fields.md`)](https://github.com/EqoAI/pbom-spec/blob/main/docs/fields.md)
+- [Converting message lists (`docs/canonical.md`)](https://github.com/EqoAI/pbom-spec/blob/main/docs/canonical.md)
+- [Examples (`examples/`)](https://github.com/EqoAI/pbom-spec/blob/main/examples/)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](https://github.com/EqoAI/pbom-spec/blob/main/CONTRIBUTING.md).
 
 ## Contributors
 - Aishwarya Athreya
@@ -110,7 +132,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Apache 2.0. See [LICENSE](LICENSE).
+Apache 2.0. See [LICENSE](https://github.com/EqoAI/pbom-spec/blob/main/LICENSE).
 
 ---
 
